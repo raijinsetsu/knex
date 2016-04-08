@@ -1,7 +1,7 @@
 
-var _       = require('lodash')
 var Promise = require('./promise')
-var assign  = require('lodash/object/assign');
+
+import {assign, isArray} from 'lodash'
 
 var PassThrough;
 
@@ -36,7 +36,7 @@ assign(Runner.prototype, {
         console.log(sql)
       }
 
-      if (_.isArray(sql)) {
+      if (isArray(sql)) {
         return runner.queryArray(sql);
       }
       return runner.query(sql);
@@ -85,7 +85,7 @@ assign(Runner.prototype, {
       runner.connection = connection;
       var sql = runner.builder.toSQL()
       var err = new Error('The stream may only be used with a single query statement.');
-      if (_.isArray(sql)) {
+      if (isArray(sql)) {
         if (hasHandler) throw err;
         stream.emit('error', err);
       }
@@ -122,6 +122,7 @@ assign(Runner.prototype, {
     return queryPromise
       .then((resp) => {
         var processedResponse = this.client.processResponse(resp, runner);
+        this.builder.emit('query-response', processedResponse, assign({__knexUid: this.connection.__knexUid}, obj), this.builder)
         this.client.emit('query-response', processedResponse, assign({__knexUid: this.connection.__knexUid}, obj), this.builder)
         return processedResponse;
       }).catch(Promise.TimeoutError, error => {
@@ -132,6 +133,10 @@ assign(Runner.prototype, {
           timeout:  obj.timeout
         });
       })
+      .catch((error) => {
+        this.builder.emit('query-error', error, assign({__knexUid: this.connection.__knexUid}, obj))
+        throw error;
+      });
   }),
 
   // In the case of the "schema builder" we call `queryArray`, which runs each

@@ -6,9 +6,9 @@ var EventEmitter = require('events').EventEmitter
 var inherits     = require('inherits')
 
 var makeKnex     = require('./util/make-knex')
-var assign       = require('lodash/object/assign')
-var uniqueId     = require('lodash/utility/uniqueId')
 var debug        = require('debug')('knex:tx')
+
+import {assign, uniqueId} from 'lodash'
 
 // Acts as a facade for a Promise, keeping the internal state
 // and managing any child transactions.
@@ -32,10 +32,15 @@ function Transaction(client, container, config, outerTx) {
       return makeTransactor(this, connection, trxClient)
     })
     .then((transactor) => {
-      var result = container(transactor)
-
       // If we've returned a "thenable" from the transaction container, assume
       // the rollback and commit are chained to this object's success / failure.
+      // Directly thrown errors are treated as automatic rollbacks.
+      var result
+      try {
+        result = container(transactor)
+      } catch (err) {
+        result = Promise.reject(err)
+      }
       if (result && result.then && typeof result.then === 'function') {
         result.then((val) => {
           transactor.commit(val)
@@ -91,10 +96,18 @@ assign(Transaction.prototype, {
 
   rollback: function(conn, error) {
     return this.query(conn, 'ROLLBACK;', 2, error)
+      .timeout(5000)
+      .catch(Promise.TimeoutError, () => {
+        this._resolver();
+      });
   },
 
   rollbackTo: function(conn, error) {
     return this.query(conn, 'ROLLBACK TO SAVEPOINT ' + this.txid, 2, error)
+      .timeout(5000)
+      .catch(Promise.TimeoutError, () => {
+        this._resolver();
+      });
   },
 
   query: function(conn, sql, status, value) {
@@ -224,7 +237,7 @@ function makeTxClient(trx, client, connection) {
     })
   }
   trxClient.acquireConnection = function() {
-    return Promise.settle([trx._previousSibling]).then(function () {
+    return trx._previousSibling.reflect().then(function () {
       return connection
     })
   }
@@ -244,7 +257,7 @@ function completedError(trx, obj) {
 var promiseInterface = [
   'then', 'bind', 'catch', 'finally', 'asCallback',
   'spread', 'map', 'reduce', 'tap', 'thenReturn',
-  'return', 'yield', 'ensure', 'nodeify', 'exec'
+  'return', 'yield', 'ensure', 'exec', 'reflect'
 ]
 
 // Creates a method which "coerces" to a promise, by calling a

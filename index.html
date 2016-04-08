@@ -180,6 +180,7 @@
       <li>– <a href="#Schema-engine">engine</a></li>
       <li>– <a href="#Schema-charset">charset</a></li>
       <li>– <a href="#Schema-collate">collate</a></li>
+      <li>– <a href="#Schema-inherits">inherits</a></li>
       <li>– <a href="#Schema-specificType">specificType</a></li>
       <li>– <a href="#Schema-index">index</a></li>
       <li>– <a href="#Schema-dropIndex">dropIndex</a></li>
@@ -505,7 +506,14 @@ pg('table').insert({a: 'b'}).returning('*').toString();
     <h3 id="Installation-pooling">Pooling</h3>
 
     <p>
-      The client created by the configuration initializes a connection pool, using the <a href="https://github.com/myndzi/pool2">Pool2</a> library. This connection pool has a default setting of a <tt>min: 2, max: 10</tt> for the MySQL and PG libraries, and a single connection for sqlite3 (due to issues with utilizing multiple connections on a single file). To change the config settings for the pool, pass a <tt>pool</tt> option as one of the keys in the initialize block. Checkout the <a href="https://github.com/myndzi/pool2">Pool2</a> library for more information.
+      The client created by the configuration initializes a connection pool, using the <a href="https://github.com/myndzi/pool2">Pool2</a> library. This connection pool has a default setting of a <tt>min: 2, max: 10</tt> for the MySQL and PG libraries, and a single connection for sqlite3 (due to issues with utilizing multiple connections on a single file). To change the config settings for the pool, pass a <tt>pool</tt> option as one of the keys in the initialize block.
+    </p>
+    <p>
+      The default connection pool also applies a <tt>ping</tt> function to verify that a connection is still alive by running a <tt>SELECT 1</tt> query.
+      If you don't want this check you may supply your own ping function to overwrite knex's default behavior.
+    </p>
+    <p>
+      Checkout the <a href="https://github.com/myndzi/pool2">Pool2</a> library for more information.
     </p>
 
 <pre>
@@ -1709,6 +1717,12 @@ knex.transaction(function(trx) {
 </pre>
 
   <p>
+    Throwing an error directly from the transaction handler function
+    automatically rolls back the transaction, same as returning a rejected
+    promise.
+  </p>
+
+  <p>
     Notice that if a promise is not returned within the handler, it is up to you to ensure <tt>trx.commit</tt>, or
     <tt>trx.rollback</tt> are called, otherwise the transaction connection will hang.
   </p>
@@ -1953,6 +1967,12 @@ knex.schema.raw("SET sql_mode='TRADITIONAL'")
       <br />
       Adds a <tt>created_at</tt> and <tt>updated_at</tt> column on the database,
       setting these each to <a href="#Schema-dateTime">dateTime</a> types.
+      <br />
+      When true is passed as the first argument a <tt>timestamp</tt> type is used.
+      <br />
+      Both colums default to being not null and the current timestamp when true
+      is passed as the second argument.
+      <br />
     </p>
 
     <p id="Schema-binary">
@@ -2026,6 +2046,13 @@ knex.table('users')
       <br />
       Sets the collation for the database table, only available within a <tt>createTable</tt> call, and only
       applicable to MySQL.
+    </p>
+
+    <p id="Schema-inherits">
+      <b class="header">inherits</b><code>table.inherits(val)</code>
+      <br />
+      Sets the tables that this table inherits, only available within a <tt>createTable</tt> call, and only
+      applicable to PostgreSQL.
     </p>
 
     <p id="Schema-specificType">
@@ -2218,18 +2245,27 @@ knex('users')
   .orWhere(knex.raw('status <> ?', [1]))
   .groupBy('status')
 </pre>
+
+    <p>
+      Positional bindings <tt>?</tt> are interpreted as values and <tt>??</tt> are interpreted as identifiers.
+    </p>
+
 <pre class="display">
-// positional bindings ? is interpret as value and ?? as identifier
 knex('users').where(knex.raw('?? = ?', ['user.name', 1]))
 </pre>
 
+    <p>
+      Named bindings such as <tt>:name</tt> are interpreted as values and <tt>:name:</tt> interpreted as identifiers.
+      Named bindings are processed so long as the value is anything other than <tt>undefined</tt>.
+    </p>
+
 <pre class="display">
-// named bindings :name is interpret as value and :name: as identifier
 knex('users')
-  .where(knex.raw(':name: = :thisGuy or :name: = :otherGuy', {
+  .where(knex.raw(':name: = :thisGuy or :name: = :otherGuy or :name: = :undefinedBinding', {
     name: 'users.name',
     thisGuy: 'Bob',
-    otherGuy: 'Jay'
+    otherGuy: 'Jay',
+    undefinedBinding: undefined
   }))
 </pre>
 
@@ -2851,10 +2887,19 @@ $ knex seed:run
     <h3 id="Migrations-API">Migration API</h3>
 
     <p>
-      <tt>knex.migrate</tt> is the class utilized by the knex migrations cli. Each method
-      takes an optional <tt>config</tt> object, which may specify the <tt>database</tt>,
-      <tt>directory</tt>, <tt>extension</tt>, and <tt>tableName</tt> for the migrations.
+      <tt>knex.migrate</tt> is the class utilized by the knex migrations cli.
     </p>
+
+    <p>
+      Each method takes an optional <tt>config</tt> object, which may specify the following properties:
+    </p>
+
+    <ul>
+      <li><tt>directory</tt>: a relative path to the directory containing the migration files (default <tt>./migrations</tt>)</li>
+      <li><tt>extension</tt>: the file extension used for the generated migration files (default <tt>js</tt>)</li>
+      <li><tt>tableName</tt>: the table name used for storing the migration state (default <tt>knex_migrations</tt>)</li>
+      <li><tt>disableTransactions</tt>: don't run migrations inside transactions (default <tt>false</tt>)</li>
+    </ul>
 
     <h4 id="Migrations-API-transactions">Transactions in migrations</h4>
 
@@ -3006,10 +3051,10 @@ $ npm test
       <li>
         Add <a href="#Builder-countDistinct"><tt>countDistinct</tt></a>,
         <a href="#Builder-avgDistinct"><tt>avgDistinct</tt></a> and
-        <a href="Builder-sumDistinct"><tt>sumDistinct</tt></a>. #1046
+        <a href="#Builder-sumDistinct"><tt>sumDistinct</tt></a>. #1046
       </li>
       <li>
-        Add <a href="Schema-jsonb"><tt>schema.jsonb</tt></a>. Deprecated <tt>schema.json(column, true)</tt>. #991
+        Add <a href="#Schema-jsonb"><tt>schema.jsonb</tt></a>. Deprecated <tt>schema.json(column, true)</tt>. #991
       </li>
       <li>Support binding identifiers with `??`. #1103</li>
       <li>Restore `query` event when triggered by transactions. #855</li>

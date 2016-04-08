@@ -1,6 +1,5 @@
 
 var EventEmitter   = require('events').EventEmitter
-var assign         = require('lodash/object/assign');
 
 var Migrator       = require('../migrate')
 var Seeder         = require('../seed')
@@ -8,7 +7,7 @@ var FunctionHelper = require('../functionhelper')
 var QueryInterface = require('../query/methods')
 var helpers        = require('../helpers')
 var Promise        = require('../promise')
-var _              = require('lodash')
+import {assign, isNumber, chunk} from 'lodash'
 
 module.exports = function makeKnex(client) {
 
@@ -25,7 +24,7 @@ module.exports = function makeKnex(client) {
 
     Promise: require('../promise'),
 
-    // A new query builder instance
+    // A new query builder instance.
     queryBuilder: function() {
       return client.queryBuilder()
     },
@@ -35,15 +34,14 @@ module.exports = function makeKnex(client) {
     },
 
     batchInsert: function(table, batch, chunkSize = 1000) {
-      if (!_.isNumber(chunkSize) || chunkSize < 1) {
+      if (!isNumber(chunkSize) || chunkSize < 1) {
         throw new TypeError("Invalid chunkSize: " + chunkSize);
       }
 
       return this.transaction((tr) => {
-
-          //Avoid unnecessary call
+          // Avoid unnecessary call.
           if(chunkSize !== 1) {
-            batch = _.chunk(batch, chunkSize)
+            batch = chunk(batch, chunkSize)
           }
 
           return Promise.all(batch.map((items) => {
